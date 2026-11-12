@@ -110,6 +110,11 @@ def test_full_job_then_results(
     assert job["project_url"] == f"https://ls.example.org/projects/{pid}/data"
     assert fake_ls.projects[pid]["title"] == "Hoestemark test"
     assert fake_ls.projects[pid]["show_collab_predictions"] is True
+    assert fake_ls.projects[pid]["model_version"] == "dfbsmdr-01.04.00"
+    assert fake_ls.projects[pid]["reveal_preannotations_interactively"] is False
+    prefilled = {t["data"]["media_id"]: t.get("predictions") for t in fake_ls.tasks[pid]}
+    assert prefilled["m-0001"][0]["result"][0]["value"] == {"choices": ["red deer"]}
+    assert prefilled["m-0004"] is None  # NULL prediction in the CSV -> blank form
     assert len(fake_ls.tasks[pid]) == 4
     media_dir = app_settings.jobs_media_root / job["id"]
     assert fake_ls.storages[pid][0]["path"] == str(media_dir.resolve())

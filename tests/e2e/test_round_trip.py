@@ -214,6 +214,7 @@ def test_full_round_trip(
             assert project["task_number"] == 4
             assert 'name="species_label"' in project["label_config"]
             assert project["show_collab_predictions"] is True
+            assert project["reveal_preannotations_interactively"] is False
             assert ls.list_local_storages(pid)[0]["path"].endswith(job_id)
 
             tasks = ls.export_tasks(pid)

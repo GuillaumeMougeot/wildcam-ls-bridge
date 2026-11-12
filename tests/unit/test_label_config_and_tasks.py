@@ -90,3 +90,13 @@ def test_build_tasks_unknown_control(settings: Settings, sample_csv: bytes) -> N
     bad = settings.model_copy(update={"ls_prediction_from_name": "nope"})
     with pytest.raises(ValueError, match="nope"):
         build_tasks(items, job_id=JOB, settings=bad, label_config=cfg)
+
+
+def test_csv_without_prediction_column_gives_blank_forms(settings: Settings) -> None:
+    csv_text = "media_id,file\nm1,wildcams/data/a.mp4\nm2,wildcams/data/b.mp4\n"
+    items = parse_csv(csv_text.encode(), strip="wildcams/").items
+    cfg = load_label_config(settings.ls_label_config)
+    tasks, warnings = build_tasks(items, job_id=JOB, settings=settings, label_config=cfg)
+    assert [t.get("predictions") for t in tasks] == [None, None]
+    assert [t["data"]["model_prediction"] for t in tasks] == [None, None]
+    assert warnings == []

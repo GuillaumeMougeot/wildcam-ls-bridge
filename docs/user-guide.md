@@ -44,6 +44,24 @@ Export your SQL query as CSV (UTF-8, header row). Requirements:
 Full column reference: [reference/csv-schema.md](reference/csv-schema.md). The format of
 `resources/test_query.csv` is exactly what the bridge expects.
 
+### Model predictions are pre-filled
+
+The `prediction` column (the model's species output) becomes a **pre-annotation**: when an
+annotator opens the video, the species is already selected and they only correct it if
+needed.
+
+| `prediction` value in the CSV | What the annotator sees |
+|---|---|
+| a species/label of the UI (`red deer`, `human`, `empty`, …; case-insensitive) | that choice pre-selected |
+| empty, `NULL`, or no `prediction` column at all | a blank form (no pre-fill) |
+| a label that is not a choice of the UI | a blank form, plus a `warnings` entry on the job |
+
+* Several rows for the same `media_id`: the most confident row (`confidence`) is used.
+* `confidence` is stored as the prediction score. `model_name` and `model_version` name the
+  prediction (`dfbsmdr-01.04.00`).
+* The model's guess is also returned with the results (`model_prediction`,
+  `model_confidence`), so you can compare it with the human answer.
+
 ## 3. Submit a job
 
 ```bash

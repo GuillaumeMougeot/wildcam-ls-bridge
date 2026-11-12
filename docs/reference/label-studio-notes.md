@@ -36,6 +36,23 @@ apply:
 | results | `GET /api/projects/{id}/export?exportType=JSON&download_all_tasks=true` | in 1.23, `predictions` in the export are **ids only** |
 | PAT minting (tests) | `POST /api/token/` → `{"token": …}` | **one PAT per user**: a second call returns 409 |
 
+### Pre-filling the form with the model prediction (verified in the 1.23 source)
+
+* Backend: the task API sends a task's predictions to the labeling UI, filtered on
+  `project.model_version` (`tasks/serializers.py::get_predictions`; the feature flag
+  `ff_front_dev_1682_model_version_dropdown_070622_short`, which would filter on ML backends
+  instead, is **off** in `feature_flags.json`). "Label All Tasks" uses
+  `Task.get_predictions_for_prelabeling()`, which requires `show_collab_predictions` and a
+  `model_version`.
+* Frontend (`web/dist/apps/labelstudio/167.js`): when a task has no annotation yet,
+  predictions exist, and `isInteractivePreannotations` is false, the first annotation is
+  built with `addAnnotationFromPrediction(...)`, preferring the prediction whose model
+  version is the project's. In other words, the form opens pre-filled.
+* So the bridge sets `show_collab_predictions=true`,
+  `model_version=<model_name>-<model_version>` and `reveal_preannotations_interactively=false`.
+  Verified on production project 4: all 94 tasks deliver the CSV prediction to the UI
+  (red deer 79, human 5, bird 4, vehicle 2, undefined 2, empty 1, badger 1).
+
 ### Local-files permission check (important)
 
 `io_storages/localfiles/views.py::localfiles_data` serves a file only if some

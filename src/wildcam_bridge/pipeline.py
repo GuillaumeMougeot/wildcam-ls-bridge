@@ -172,9 +172,17 @@ class Pipeline:
                 {p["model_version"] for t in tasks for p in t.get("predictions", [])}
             )
             if model_versions:
-                try:  # show the model's guess pre-filled in the annotation form
+                # Pre-fill the annotation form with the model's guess. The LS 1.23 frontend
+                # builds the first annotation from a prediction when show_collab_predictions
+                # is on, the prediction's model_version is the project's, and pre-annotations
+                # are not "revealed interactively" (docs/reference/label-studio-notes.md).
+                # Tasks whose CSV row had no (usable) prediction simply open blank.
+                try:
                     ls.update_project(
-                        project_id, show_collab_predictions=True, model_version=model_versions[0]
+                        project_id,
+                        show_collab_predictions=True,
+                        model_version=model_versions[0],
+                        reveal_preannotations_interactively=False,
                     )
                 except Exception as exc:  # cosmetic; do not fail the job
                     warnings.append(f"could not enable pre-annotations: {exc}")
