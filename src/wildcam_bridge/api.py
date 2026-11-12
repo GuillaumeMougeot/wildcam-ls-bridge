@@ -31,6 +31,13 @@ _bearer = HTTPBearer(auto_error=False)
 Fmt = Annotated[Literal["json", "csv"], Query(alias="format", description="json or csv")]
 
 
+def _route_path(request: Request) -> str:
+    """Path without the ASGI root_path (uvicorn --root-path prefixes scope["path"] with it)."""
+    path: str = request.scope.get("path", "")
+    root: str = request.scope.get("root_path", "")
+    return path[len(root) :] if root and path.startswith(root) else path
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -78,7 +85,7 @@ def create_app(
         # only, so this header cannot be forged by remote clients.
         if (
             settings.bridge_require_https
-            and request.url.path != "/healthz"
+            and _route_path(request) != "/healthz"
             and request.headers.get("x-forwarded-proto", "").lower() != "https"
         ):
             return JSONResponse({"detail": "HTTPS required"}, status_code=403)

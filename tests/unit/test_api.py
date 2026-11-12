@@ -220,3 +220,13 @@ def test_bad_label_studio_token_fails_before_download(
     assert job["error"].startswith("Label Studio check failed: LS_API_TOKEN is not set")
     assert job["report"] == {}  # stopped before the ERDA dry run
     assert not (app_settings.jobs_media_root / job["id"]).exists()
+
+
+def test_behind_root_path_like_uvicorn(app_settings: Settings) -> None:
+    """uvicorn --root-path puts the prefix into scope["path"]; exemptions must still work."""
+    app = create_app(app_settings, start_worker=False)
+    with TestClient(app, root_path="/bridge") as c:  # paths below mimic uvicorn's scope
+        assert c.get("/bridge/healthz").json() == {"status": "ok"}  # no TLS header needed
+        auth_only = {"Authorization": f"Bearer {KEY}"}
+        assert c.get("/bridge/api/v1/jobs", headers=auth_only).status_code == 403
+        assert c.get("/bridge/api/v1/jobs", headers=HDR).status_code == 200
