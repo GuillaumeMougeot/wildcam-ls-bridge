@@ -1,0 +1,63 @@
+[
+  {
+    "id": 101,
+    "project": 3,
+    "data": {
+      "video": "/data/local-files/?d=bridge/20261112T120000Z-abcdef/data/x/img_0001.mp4",
+      "media_id": "m-0001",
+      "prediction_id": "p-0001",
+      "file": "wildcams/data/x/img_0001.mp4",
+      "model_prediction": "red deer",
+      "model_confidence": 0.97
+    },
+    "annotations": [
+      {
+        "id": 9001,
+        "completed_by": 1,
+        "created_at": "2026-11-12T10:00:00Z",
+        "updated_at": "2026-11-12T10:01:00Z",
+        "lead_time": 42.5,
+        "was_cancelled": false,
+        "ground_truth": false,
+        "result": [
+          {"from_name": "species_label", "to_name": "video", "type": "choices", "value": {"choices": ["red deer"]}},
+          {"from_name": "count", "to_name": "video", "type": "number", "value": {"number": 2}},
+          {"from_name": "certainty", "to_name": "video", "type": "choices", "value": {"choices": ["Absolute"]}},
+          {"from_name": "notes", "to_name": "video", "type": "textarea", "value": {"text": ["two hinds", "one calf?"]}},
+          {"from_name": "unknown_control", "to_name": "video", "type": "choices", "value": {"choices": ["x"]}}
+        ]
+      },
+      {
+        "id": 9002,
+        "completed_by": {"id": 5, "email": "annotator@example.org"},
+        "created_at": "2026-11-12T11:00:00Z",
+        "updated_at": "2026-11-12T11:00:30Z",
+        "lead_time": 10,
+        "result": [
+          {"from_name": "species_label", "to_name": "video", "type": "choices", "value": {"choices": ["roe deer"]}}
+        ]
+      }
+    ],
+    "predictions": []
+  },
+  {
+    "id": 102,
+    "project": 3,
+    "data": {"video": "/data/local-files/?d=bridge/x/img_0002.mp4", "media_id": "m-0002"},
+    "annotations": [
+      {
+        "id": 9003,
+        "completed_by": 1,
+        "result": [
+          {"from_name": "species_label", "to_name": "video", "type": "choices", "value": {"choices": ["fox", "badger"]}}
+        ]
+      }
+    ]
+  },
+  {
+    "id": 103,
+    "project": 3,
+    "data": {"video": "/data/local-files/?d=bridge/x/img_0003.mp4", "media_id": "m-0003"},
+    "annotations": []
+  }
+]

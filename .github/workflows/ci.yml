@@ -1,0 +1,18 @@
+# CI for when the repository is pushed to GitHub (adapt to .gitlab-ci.yml for GitLab).
+# Runs lint, strict typing and the unit/integration tests. The e2e test needs a Label Studio
+# installation and is skipped here (run `make e2e` on the server).
+name: ci
+on: [push, pull_request]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --locked
+      - run: uv run ruff check src tests scripts
+      - run: uv run ruff format --check src tests scripts
+      - run: uv run mypy
+      - run: uv run pytest --cov --cov-report=term-missing

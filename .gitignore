@@ -1,0 +1,33 @@
+# ---- secrets: NEVER commit -------------------------------------------------
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+id_*
+
+# ---- runtime state (job DB, uploaded CSVs, logs) ----------------------------
+var/
+
+# ---- data: real query exports and videos stay out of git -------------------
+*.mp4
+*.MP4
+*.avi
+*.mov
+data/
+labelstudio-data/
+
+# ---- python / tooling -------------------------------------------------------
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/

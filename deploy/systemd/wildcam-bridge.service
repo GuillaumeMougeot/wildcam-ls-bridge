@@ -1,0 +1,40 @@
+# wildcam-ls-bridge HTTP API -> /etc/systemd/system/wildcam-bridge.service
+# @REPO@ / @USER@ / @MEDIA@ are substituted by deploy/install.sh.
+[Unit]
+Description=wildcam Label Studio bridge (HTTP API)
+After=network-online.target wildcam.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+WorkingDirectory=@REPO@
+# Configuration and secrets are read from @REPO@/.env (chmod 600).
+ExecStart=@REPO@/.venv/bin/wildcam-bridge serve
+Restart=on-failure
+RestartSec=5
+
+# ---- hardening: read-only system, writable only where the bridge must write
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@REPO@/var @MEDIA@
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
