@@ -94,7 +94,11 @@ then `sudo certbot --nginx -d <domain>` for TLS. Create the first LS user (admin
 
 1. In Label Studio, as admin: *Organization → Add People* → copy the invite link.
 2. Open the link in a private window, sign up as e.g. `bridge-bot@<your domain>` with a strong
-   password (store it in your password manager).
+   password (store it in your password manager). **No real mailbox is needed:** Label Studio
+   Community sends no email (`EMAIL_BACKEND` defaults to Django's dummy backend), so the
+   address is only a login name. Use a domain you control so nobody else can claim it. A
+   lost password can be reset on the server with
+   `label-studio reset_password --username <email> --password <new>` (as the LS user).
 3. As that user: *Account & Settings → Personal Access Token → Create*. Copy the token
    (shown once).
 

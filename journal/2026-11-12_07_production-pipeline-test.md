@@ -1,26 +1,42 @@
 # 07: Production pipeline test with `test_query.csv`
 
-**Date:** 2026-11-12 · **Status:** waiting for the Label Studio service-account token
+**Date:** 2026-11-12 · **Status:** done ✅
 
 ## Goal
 Run the whole chain on the real systems: `resources/test_query.csv` → bridge API → real
-ERDA (94 videos, 1.36 GB) → production Label Studio project `[TEST] …` → annotation →
-results. Approved by the project owner (test project in production LS, to be deleted
-afterwards).
+ERDA → production Label Studio → annotation → results. The project owner approved a
+clearly named test project in production LS, to be deleted afterwards.
 
-## Done so far
-* Real ERDA dry run: OK (see entry 02).
-* Full chain on a throw-away Label Studio with a fake SFTP server: OK (entry 05).
+## Service account
+The owner created the LS service account and its Personal Access Token (stored in `.env`
+only). Question raised: *"I cannot create a mail address for a bot"*. No mailbox is needed:
+LS on this server sends no email (`EMAIL_BACKEND` = Django dummy backend), so the address is
+only a login name (e.g. `bridge-bot@wildcam.ecoscience.dk`). The dev guide now says so.
+`wildcam-bridge check` → all PASS (LS user id 4).
 
-## Blocking
-`LS_API_TOKEN` in `.env` is empty. The owner creates the `bridge-bot` service account and its
-Personal Access Token (dev guide §2, step 2) and pastes the token into `.env`.
+## Rehearsal (throw-away LS, real ERDA, real bridge server on :8091)
+94/94 videos (1,364,296,450 B) downloaded in ~37 s, 94 tasks, video served byte-identical,
+3 simulated annotations returned as JSON/CSV. Scratch data deleted afterwards.
 
-## Procedure (once the token is set)
-```bash
-uv run wildcam-bridge check
-uv run wildcam-bridge serve &       # or the systemd service
-curl -H "Authorization: Bearer $KEY" -H "X-Forwarded-Proto: https" \
-     -F file=@$HOME/resources/test_query.csv -F "title=[TEST] wildcam-bridge e2e 2026-11-12" \
-     http://127.0.0.1:8090/api/v1/jobs
-```
+## Production run (bridge server on :8090 with the production `.env`)
+| Step | Result |
+|---|---|
+| dry-run job `20261112T140449Z-dc6339` | `dry_run_ok`: 94/94 found, 1.36 GB to download, 72.6 GB free |
+| full job `20261112T140452Z-3a357f` | `ready` in **76 s**: 94 downloaded, 0 failed, no `.part` left |
+| media | `~/labelstudio-data/bridge/20261112T140452Z-3a357f/` (1.3 GB, 94 mp4 + `tasks.json`) |
+| LS project | **id 4** "[TEST] wildcam-bridge e2e 2026-11-12", 94 tasks, `model_version=dfbsmdr-01.04.00`, pre-annotations shown |
+| video streaming | `/data/local-files/?d=bridge/<job>/data/...` → 200 `video/mp4`, bytes identical |
+| annotator (simulated, 3 tasks) | annotations created as the service account |
+| `GET /jobs/{id}/progress` | `total_tasks 94, finished_tasks 3, complete false` |
+| `GET /jobs/{id}/results?format=csv` | header + 3 rows, joined on `media_id`/`prediction_id` |
+
+Production LS stayed healthy throughout (`/health` 200, `wildcam.service` active).
+
+## Bug found on the way
+Under the real uvicorn server (`--root-path /bridge`), `/healthz` was refused without
+`X-Forwarded-Proto` because uvicorn includes the root path in `scope["path"]`. Fixed in
+commit b11cd5f; the regression test drives the app the way uvicorn does.
+
+## To do (owner)
+* Inspect, then **delete LS project 4** and `rm -r ~/labelstudio-data/bridge/20261112T140452Z-3a357f`.
+* `sudo deploy/install.sh` to install the systemd service and the nginx `/bridge/` route.

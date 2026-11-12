@@ -10,4 +10,4 @@ One file per task: `YYYY-MM-DD_NN_short-title.md`. Add a row when you add an ent
 | 04 | [Bridge implementation](2026-11-12_04_bridge-implementation.md) | 2026-11-12 | FastAPI API, auth, job worker, dry run, SFTP download, Label Studio client, results |
 | 05 | [Testing](2026-11-12_05_testing.md) | 2026-11-12 | Unit, integration (fake SFTP), e2e with a throw-away Label Studio |
 | 06 | [Deployment and docs](2026-11-12_06_deployment-and-docs.md) | 2026-11-12 | Hardened systemd unit, nginx snippet, install script, user and dev guides |
-| 07 | [Production pipeline test](2026-11-12_07_production-pipeline-test.md) | 2026-11-12 | Full run with `test_query.csv` on real ERDA + production Label Studio |
+| 07 | [Production pipeline test](2026-11-12_07_production-pipeline-test.md) | 2026-11-12 | `test_query.csv` → real ERDA → production LS (project 4): 94/94 videos in 76 s, results via API ✅ |
