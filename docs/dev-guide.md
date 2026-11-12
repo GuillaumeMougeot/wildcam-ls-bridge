@@ -193,6 +193,9 @@ sqlite3 var/bridge.sqlite3 'select id,status,error from jobs order by created_at
 * **Free disk space:** once a project is fully annotated and the results are exported, delete
   the project in Label Studio, then `rm -r ~/labelstudio-data/bridge/<job_id>`. Uploaded CSVs
   are in `var/jobs/<job_id>/input.csv`.
+* **Check the model pre-fill of a project:**
+  `uv run python scripts/verify_prefill.py query.csv <project_id>` (every task's prediction is
+  compared with its CSV row; exit code 0 = all pre-filled as expected).
 * **Run the pipeline without the API** (debugging):
   `uv run wildcam-bridge run query.csv --title "..."`.
 
