@@ -14,3 +14,4 @@ One file per task: `YYYY-MM-DD_NN_short-title.md`. Add a row when you add an ent
 | 08 | [Deployment check and pre-fill](2026-11-12_08_deployment-check-and-prefill.md) | 2026-11-12 | Installed service verified over public HTTPS (TLS 1.3, auth, rate limit, sandbox); model prediction pre-fill verified in LS 1.23 and hardened |
 | 09 | [Pre-fill test, full CSV](2026-11-12_09_prefill-test-full-csv.md) | 2026-11-12 | Full `test_query.csv` via public API (project 6): 94/94 videos pre-filled exactly as the CSV; new `scripts/verify_prefill.py` |
 | 10 | [Project deletion](2026-11-13_10_project-deletion.md) | 2026-11-13 | `DELETE /jobs/{id}` and `/projects/{id}` (bridge projects only, `force` for annotated ones); test projects 4–6 deleted, 2.7 GB freed |
+| 11 | [gen-api-key writes .env](2026-11-13_11_gen-api-key-writes-env.md) | 2026-11-13 | `gen-api-key --name` appends the hash to `.env` (atomic, verified with the service's parser), prints key + restart command |

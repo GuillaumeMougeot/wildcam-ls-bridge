@@ -113,7 +113,7 @@ git clone <repo-url> ~/wildcam-ls-bridge && cd ~/wildcam-ls-bridge
 uv sync                                   # creates .venv (runtime + dev tools)
 cp .env.example .env && chmod 600 .env
 nano .env                                 # ERDA_SHARELINK, LS_API_TOKEN, LS_* paths
-uv run wildcam-bridge gen-api-key         # once per client; put the sha256:… in BRIDGE_API_KEY_HASHES
+uv run wildcam-bridge gen-api-key --name "sql-client"   # once per client; hash goes into .env
 ```
 
 Pin and **verify** the ERDA host key (compare the fingerprint with
@@ -183,8 +183,16 @@ sqlite3 var/bridge.sqlite3 'select id,status,error from jobs order by created_at
 * **Retry a failed job:** `POST /api/v1/jobs/{id}/retry` (completed files are not
   downloaded again; an existing project is reused).
 * **Restart:** jobs interrupted by a restart become `failed` and can be retried.
-* **Add or revoke a client:** `uv run wildcam-bridge gen-api-key`, then add or remove the
-  hash in `BRIDGE_API_KEY_HASHES` and `sudo systemctl restart wildcam-bridge`.
+* **Add a client:** `uv run wildcam-bridge gen-api-key --name "<who>"` (from the repo root).
+  It prints the key (shown once: hand it over, or keep a copy in
+  `secrets/api-key-<who>.txt`, chmod 600), appends its hash to `BRIDGE_API_KEY_HASHES` in
+  `.env` with `<who> (date)` in the line's comment, and prints the restart command
+  (`sudo systemctl restart wildcam-bridge`). The edit is atomic, keeps the file mode, and is
+  re-read with the service's own parser; if that does not give exactly old keys + new key,
+  `.env` is restored. `--no-write` only prints the key and hash (e.g. for another server);
+  `--env-file` picks another file.
+* **Revoke a client:** delete its `sha256:…` from `BRIDGE_API_KEY_HASHES` (the comment says
+  which is which, in the same order), then restart.
 * **Rotate the LS token:** create a new PAT for the service account, update `LS_API_TOKEN`,
   restart.
 * **Rotate the ERDA sharelink:** update `ERDA_SHARELINK`, restart.

@@ -6,8 +6,9 @@ import pytest
 
 from tests.conftest import FIXTURES, SHARE, FakeErda, FakeLabelStudio
 from wildcam_bridge import cli, pipeline
+from wildcam_bridge.auth import hash_api_key, verify_api_key
 from wildcam_bridge.client import BridgeClient
-from wildcam_bridge.settings import get_settings
+from wildcam_bridge.settings import Settings, get_settings
 
 
 def test_client_refuses_plain_http() -> None:
@@ -40,10 +41,45 @@ def test_client_requests() -> None:
     assert b"sample_query.csv" in post.content
 
 
-def test_gen_api_key(capsys: pytest.CaptureFixture[str]) -> None:
+def _key_and_hash(out: str) -> tuple[str, str]:
+    key = next(w for w in out.split() if w.startswith("wcb_"))
+    return key, hash_api_key(key)
+
+
+def test_gen_api_key_updates_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)  # never the repo's real .env
+    env = tmp_path / ".env"
+    env.write_text("LS_URL=http://127.0.0.1:8081\nBRIDGE_API_KEY_HASHES=sha256:aa   # old\n")
+    env.chmod(0o600)
+    assert cli.main(["gen-api-key", "--name", "lab-pc"]) == 0
+    out = capsys.readouterr().out
+    key, key_hash = _key_and_hash(out)
+    assert "sudo systemctl restart wildcam-bridge" in out
+    assert "now 2 keys" in out
+    settings = Settings(_env_file=env)  # type: ignore[call-arg]
+    assert settings.api_key_hashes == ["sha256:aa", key_hash]
+    assert verify_api_key(key, settings.api_key_hashes)
+    assert (env.stat().st_mode & 0o777) == 0o600
+
+
+def test_gen_api_key_without_env_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
     assert cli.main(["gen-api-key"]) == 0
     out = capsys.readouterr().out
-    assert "wcb_" in out and "sha256:" in out
+    _, key_hash = _key_and_hash(out)
+    assert key_hash in out and "No .env" in out and "systemctl restart" in out
+    assert not (tmp_path / ".env").exists()
+
+    (tmp_path / ".env").write_text("BRIDGE_API_KEY_HASHES=\n")
+    assert cli.main(["gen-api-key", "--no-write"]) == 0
+    assert "not written" in capsys.readouterr().out
+    assert (tmp_path / ".env").read_text() == "BRIDGE_API_KEY_HASHES=\n"
+    with pytest.raises(SystemExit):
+        cli.main(["gen-api-key", "--name", "bad # name"])
 
 
 def _env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_erda: FakeErda) -> None:

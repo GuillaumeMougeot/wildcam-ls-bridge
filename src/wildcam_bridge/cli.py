@@ -54,12 +54,35 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_gen_api_key(_: argparse.Namespace) -> int:
+SERVICE_RESTART = "sudo systemctl restart wildcam-bridge"
+
+
+def cmd_gen_api_key(args: argparse.Namespace) -> int:
+    """New client API key; its hash is added to BRIDGE_API_KEY_HASHES in .env if found."""
+    from wildcam_bridge.auth import LABEL_RE, add_hash_to_env_file
+
+    if not LABEL_RE.match(args.name):
+        raise SystemExit(f"invalid --name {args.name!r} (letters, digits, space, . @ - ( ) _)")
     key = generate_api_key()
-    print("API key (give to the client, shown only once):")
-    print(f"  {key}")
-    print("Add this hash to BRIDGE_API_KEY_HASHES in .env (comma-separated):")
-    print(f"  {hash_api_key(key)}")
+    key_hash = hash_api_key(key)
+    env_file = Path(args.env_file)
+    print("New API key (give it to the client; shown only once, the server keeps only its hash):")
+    print(f"\n  {key}\n")
+    if args.no_write or not env_file.is_file():
+        why = "not written (--no-write)" if args.no_write else f"No {env_file} in {Path.cwd()}"
+        print(f"{why}: add this hash to BRIDGE_API_KEY_HASHES (comma-separated) yourself:")
+        print(f"\n  {key_hash}\n")
+    else:
+        try:
+            hashes = add_hash_to_env_file(env_file, key_hash, args.name)
+        except ValueError as exc:
+            print(f"{exc}\nHash to add: {key_hash}", file=sys.stderr)
+            return 1
+        print(
+            f"Hash added to BRIDGE_API_KEY_HASHES in {env_file.resolve()} "
+            f"as {args.name!r} (now {len(hashes)} keys)."
+        )
+    print(f"Restart the service to activate it:\n\n  {SERVICE_RESTART}")
     return 0
 
 
@@ -281,9 +304,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--log-level", default="info")
     s.set_defaults(func=cmd_serve)
 
-    sub.add_parser("gen-api-key", help="generate a new client API key").set_defaults(
-        func=cmd_gen_api_key
+    s = sub.add_parser(
+        "gen-api-key", help="new client API key (hash added to .env when the file exists)"
     )
+    s.add_argument("--name", default="client", help="who gets the key (noted in .env)")
+    s.add_argument("--env-file", default=".env", help="default: .env in the current folder")
+    s.add_argument("--no-write", action="store_true", help="only print the key and its hash")
+    s.set_defaults(func=cmd_gen_api_key)
     sub.add_parser("check", help="verify configuration and connectivity").set_defaults(
         func=cmd_check
     )
