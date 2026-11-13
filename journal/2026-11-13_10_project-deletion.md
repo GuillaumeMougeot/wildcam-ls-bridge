@@ -1,6 +1,6 @@
 # 10: Project deletion through the API; test projects removed
 
-**Date:** 2026-11-13 · **Status:** done ✅ (endpoint live after `sudo systemctl restart wildcam-bridge`)
+**Date:** 2026-11-13 · **Status:** done ✅ (live since the restart at 09:04 UTC, verified)
 
 ## Requests
 1. "Delete the test projects 4, 5 and 6."
@@ -61,7 +61,16 @@ project 6 had 1 by user 1 (the owner's pre-fill check, "red deer" accepted).
 Afterwards: LS answers 404 for 4, 5 and 6; 2, 7 and 8 are unchanged; LS `/health` 200; free
 disk 63 → 65 GB. The running (pre-restart) service shows the three jobs as `deleted`.
 
-## To do (owner)
-`sudo systemctl restart wildcam-bridge` to load the new endpoint (until then `DELETE` answers
-404). The restart also loads the explicit `reveal_preannotations_interactively` flag from
-entry 08.
+## Live check after the owner's restart (09:04 UTC, commit 1bf61ae)
+Through `https://wildcam.ecoscience.dk/bridge` with the client key:
+
+| Check | Result |
+|---|---|
+| `DELETE /projects/999999` | 404 "no bridge job created this project" |
+| `DELETE /projects/2` (the real "wildcam" project, no bridge job) | 404, untouched (2,723 annotations) |
+| `DELETE` without an API key | 401 |
+| `DELETE` an already deleted job | 200, `"already deleted"` |
+| one-video job `20261113T090610Z-65e8a6` → project 9, annotated once by the service account | `ready` |
+| `DELETE /projects/9` without force | 409 "project 9 has 1 annotation(s); …"; project and folder kept, results still downloadable |
+| `client delete <job> --force` | 200: `annotations_deleted 1`, 2 files, 8 MB; `project_url` null |
+| afterwards | LS answers 404 for project 9; folder gone; results 410; projects 2, 7 and 8 untouched |
