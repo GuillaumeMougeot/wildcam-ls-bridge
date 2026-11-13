@@ -15,3 +15,4 @@ One file per task: `YYYY-MM-DD_NN_short-title.md`. Add a row when you add an ent
 | 09 | [Pre-fill test, full CSV](2026-11-12_09_prefill-test-full-csv.md) | 2026-11-12 | Full `test_query.csv` via public API (project 6): 94/94 videos pre-filled exactly as the CSV; new `scripts/verify_prefill.py` |
 | 10 | [Project deletion](2026-11-13_10_project-deletion.md) | 2026-11-13 | `DELETE /jobs/{id}` and `/projects/{id}` (bridge projects only, `force` for annotated ones); test projects 4–6 deleted, 2.7 GB freed |
 | 11 | [gen-api-key writes .env](2026-11-13_11_gen-api-key-writes-env.md) | 2026-11-13 | `gen-api-key --name` appends the hash to `.env` (atomic, verified with the service's parser), prints key + restart command |
+| 12 | [GitHub remote](2026-11-13_12_github-remote.md) | 2026-11-13 | History checked for secrets, pushed `main` to `GuillaumeMougeot/wildcam-ls-bridge`; CI reproduced on a fresh clone (116 passed) |

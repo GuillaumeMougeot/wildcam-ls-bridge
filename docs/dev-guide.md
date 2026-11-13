@@ -109,7 +109,7 @@ see and annotate them (Community edition).
 
 ```bash
 sudo -iu wildcam
-git clone <repo-url> ~/wildcam-ls-bridge && cd ~/wildcam-ls-bridge
+git clone git@github.com:GuillaumeMougeot/wildcam-ls-bridge.git ~/wildcam-ls-bridge && cd ~/wildcam-ls-bridge
 uv sync                                   # creates .venv (runtime + dev tools)
 cp .env.example .env && chmod 600 .env
 nano .env                                 # ERDA_SHARELINK, LS_API_TOKEN, LS_* paths
