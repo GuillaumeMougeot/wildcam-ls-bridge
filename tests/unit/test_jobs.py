@@ -60,6 +60,21 @@ def test_fail_interrupted_and_queued(tmp_path: Path) -> None:
     assert store.queued_ids() == [queued]
 
 
+def test_find_by_project_and_deleted_jobs(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "db.sqlite3")
+    job_id = _create(store)
+    store.update(job_id, status=JobStatus.READY, project_id=7)
+    found = store.find_by_project(7)
+    assert found is not None and found.id == job_id
+    assert store.find_by_project(8) is None
+    store.update(job_id, status=JobStatus.DELETED)
+    assert store.fail_interrupted() == []  # deleted is terminal: not touched on restart
+    job = store.get(job_id)
+    assert job is not None
+    public = job.to_public("https://ls")
+    assert (public["project_id"], public["project_url"]) == (7, None)  # no dead link
+
+
 def test_runner_processes_sequentially_and_survives_errors() -> None:
     seen: list[str] = []
     active = threading.Semaphore(1)

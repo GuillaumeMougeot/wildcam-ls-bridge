@@ -190,9 +190,14 @@ sqlite3 var/bridge.sqlite3 'select id,status,error from jobs order by created_at
 * **Rotate the ERDA sharelink:** update `ERDA_SHARELINK`, restart.
 * **ERDA host key changed:** the job fails with *host key does not match*. Verify the new
   fingerprint out-of-band, re-pin (see [reference/erda.md](reference/erda.md)), commit.
-* **Free disk space:** once a project is fully annotated and the results are exported, delete
-  the project in Label Studio, then `rm -r ~/labelstudio-data/bridge/<job_id>`. Uploaded CSVs
-  are in `var/jobs/<job_id>/input.csv`.
+* **Free disk space / delete a project:** once the results are exported, the client calls
+  `DELETE /api/v1/jobs/{id}` (or `/projects/{id}`; `?force=true` if annotated). On the
+  server, without an API key: `uv run wildcam-bridge delete <job_id>` or
+  `uv run wildcam-bridge delete --project <id> [--force]`. Both delete the LS project and
+  `~/labelstudio-data/bridge/<job_id>/`, and keep the job record (`status = deleted`,
+  summary in `report.deleted`) and `var/jobs/<job_id>/input.csv`. Only projects created by a
+  bridge job can be deleted this way; others are refused. A project deleted in the LS UI
+  leaves its videos behind: run the same command, it then only removes the folder.
 * **Check the model pre-fill of a project:**
   `uv run python scripts/verify_prefill.py query.csv <project_id>` (every task's prediction is
   compared with its CSV row; exit code 0 = all pre-filled as expected).

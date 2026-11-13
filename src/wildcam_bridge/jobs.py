@@ -30,8 +30,10 @@ class JobStatus:
     READY = "ready"  # project exists; human annotation can start / is ongoing
     DRY_RUN_OK = "dry_run_ok"  # dry-run-only job finished successfully
     FAILED = "failed"
+    DELETED = "deleted"  # LS project + videos deleted (DELETE /jobs/{id}); record kept
 
-    TERMINAL = frozenset({READY, DRY_RUN_OK, FAILED})
+    TERMINAL = frozenset({READY, DRY_RUN_OK, FAILED, DELETED})
+    RUNNING = frozenset({CHECKING, DOWNLOADING, IMPORTING})  # cannot be deleted
 
 
 @dataclass
@@ -53,9 +55,8 @@ class Job:
 
     def to_public(self, ls_public_url: str) -> dict[str, Any]:
         d = {k: getattr(self, k) for k in self.__dataclass_fields__}
-        d["project_url"] = (
-            f"{ls_public_url}/projects/{self.project_id}/data" if self.project_id else None
-        )
+        live = self.project_id is not None and self.status != JobStatus.DELETED
+        d["project_url"] = f"{ls_public_url}/projects/{self.project_id}/data" if live else None
         return d
 
 
@@ -163,6 +164,15 @@ class JobStore:
     def get(self, job_id: str) -> Job | None:
         with self._conn() as c:
             row = c.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return self._row_to_job(row) if row else None
+
+    def find_by_project(self, project_id: int) -> Job | None:
+        """The job that created Label Studio project ``project_id`` (None: not a bridge project)."""
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT * FROM jobs WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+                (project_id,),
+            ).fetchone()
         return self._row_to_job(row) if row else None
 
     def recent(self, limit: int = 100) -> list[Job]:

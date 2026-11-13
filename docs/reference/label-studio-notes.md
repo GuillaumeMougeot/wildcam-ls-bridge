@@ -53,6 +53,17 @@ apply:
   Verified on production project 4: all 94 tasks deliver the CSV prediction to the UI
   (red deer 79, human 5, bird 4, vehicle 2, undefined 2, empty 1, badger 1).
 
+### Deleting a project (verified in the 1.23 source and the e2e test)
+* `DELETE /api/projects/{id}` → 204. `ProjectAPI.perform_destroy` calls `instance.delete()`
+  synchronously (signals disconnected), cascading to tasks, annotations, predictions and
+  storages; afterwards `GET /api/projects/{id}` → 404.
+* Files under `LOCAL_FILES_DOCUMENT_ROOT` are **not** deleted by LS: the bridge removes the
+  job folder itself (`Pipeline.delete`).
+* In Community edition any member of the organization may delete any project, so the
+  bridge restricts `DELETE` to projects recorded in its own job store.
+* The project's `total_annotations_number` is what the bridge checks before refusing a
+  delete without `force=true`.
+
 ### Local-files permission check (important)
 
 `io_storages/localfiles/views.py::localfiles_data` serves a file only if some

@@ -31,6 +31,7 @@ curl -sS -X POST "$BRIDGE_URL/api/v1/jobs" -H "Authorization: Bearer $BRIDGE_API
      -F file=@query.csv -F title="My batch"                              # → {"id": "...", ...}
 curl -sS "$BRIDGE_URL/api/v1/jobs/<id>"          -H "Authorization: Bearer $BRIDGE_API_KEY"
 curl -sS "$BRIDGE_URL/api/v1/jobs/<id>/results?format=csv" -H "Authorization: Bearer $BRIDGE_API_KEY"
+curl -sS -X DELETE "$BRIDGE_URL/api/v1/jobs/<id>?force=true" -H "Authorization: Bearer $BRIDGE_API_KEY"  # when done
 ```
 
 ## Quick start (server)

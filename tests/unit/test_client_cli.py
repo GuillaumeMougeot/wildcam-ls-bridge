@@ -112,3 +112,69 @@ def test_client_cli_needs_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("BRIDGE_URL", raising=False)
     with pytest.raises(SystemExit, match="BRIDGE_URL"):
         cli.main(["client", "status", "x"])
+
+
+def test_client_delete() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        if "/projects/" in req.url.path:
+            return httpx.Response(409, json={"detail": "project 4 has 3 annotation(s)"})
+        return httpx.Response(200, json={"id": "J", "status": "deleted"})
+
+    with BridgeClient("https://h/bridge", "k", transport=httpx.MockTransport(handler)) as c:
+        assert c.delete("J", force=True)["status"] == "deleted"
+        with pytest.raises(httpx.HTTPStatusError):
+            c.delete_project(4)
+    assert (seen[0].method, seen[0].url.path) == ("DELETE", "/bridge/api/v1/jobs/J")
+    assert seen[0].url.params["force"] == "true"
+    assert seen[1].url.path == "/bridge/api/v1/projects/4"
+    assert seen[1].url.params["force"] == "false"
+
+
+def test_client_cli_delete(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.params["force"] == "false":
+            return httpx.Response(409, json={"detail": "project 4 has 3 annotation(s)"})
+        return httpx.Response(200, json={"id": "J", "status": "deleted"})
+
+    monkeypatch.setattr(
+        cli,
+        "_client",
+        lambda: BridgeClient("https://h", "k", transport=httpx.MockTransport(handler)),
+    )
+    assert cli.main(["client", "delete", "--project", "4"]) == 1
+    assert "error 409: project 4 has 3 annotation(s)" in capsys.readouterr().err
+    assert cli.main(["client", "delete", "J", "--force"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "deleted"
+    with pytest.raises(SystemExit, match="either"):
+        cli.main(["client", "delete", "J", "--project", "4"])
+
+
+def test_cli_local_delete(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    fake_erda: FakeErda,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _env(monkeypatch, tmp_path, fake_erda)
+    ls = FakeLabelStudio()
+    monkeypatch.setattr(pipeline, "default_ls_factory", lambda s: ls)
+    assert cli.main(["run", str(FIXTURES / "sample_query.csv")]) == 0
+    job = json.loads(capsys.readouterr().out)
+    pid = job["project_id"]
+    ls.tasks[pid][0]["annotations"] = [{"id": 1, "result": []}]
+
+    assert cli.main(["delete", "--project", str(pid)]) == 1  # annotated: needs --force
+    assert "refused" in capsys.readouterr().err
+    assert cli.main(["delete", "--project", str(pid), "--force"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert (out["job_id"], out["label_studio_project"]) == (job["id"], "deleted")
+    assert pid not in ls.projects and not (tmp_path / "media" / "bridge" / job["id"]).exists()
+    assert cli.main(["delete", "--project", "999"]) == 1
+    assert cli.main(["delete", "20261112T120000Z-abcdef"]) == 1
+    assert "unknown job" in capsys.readouterr().err
+    get_settings.cache_clear()

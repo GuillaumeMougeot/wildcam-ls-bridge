@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from tests.conftest import SAMPLE_FILES, FakeErda, FakeLabelStudio, make_settings
 from wildcam_bridge.api import create_app
 from wildcam_bridge.auth import generate_api_key, hash_api_key
+from wildcam_bridge.labelstudio import LabelStudioError
 from wildcam_bridge.settings import Settings
 
 KEY = generate_api_key()
@@ -207,6 +208,8 @@ def test_docs_served_under_root_path(app_settings: Settings, fake_ls: FakeLabelS
     assert "/api/v1/jobs" in spec["paths"]
     params = spec["paths"]["/api/v1/jobs/{job_id}/results"]["get"]["parameters"]
     assert "format" in [p["name"] for p in params]
+    params = spec["paths"]["/api/v1/jobs/{job_id}"]["delete"]["parameters"]
+    assert "force" in [p["name"] for p in params]  # a query parameter, not a request body
 
 
 def test_bad_label_studio_token_fails_before_download(
@@ -235,3 +238,105 @@ def test_behind_root_path_like_uvicorn(app_settings: Settings) -> None:
         auth_only = {"Authorization": f"Bearer {KEY}"}
         assert c.get("/bridge/api/v1/jobs", headers=auth_only).status_code == 403
         assert c.get("/bridge/api/v1/jobs", headers=HDR).status_code == 200
+
+
+# ---------------------------------------------------------------------------- deletion
+def test_delete_job(
+    client: TestClient, sample_csv: bytes, fake_ls: FakeLabelStudio, app_settings: Settings
+) -> None:
+    job = _submit(client, sample_csv)
+    pid, media_dir = job["project_id"], app_settings.jobs_media_root / job["id"]
+    assert pid in fake_ls.projects and media_dir.is_dir()
+
+    resp = client.delete(f"/api/v1/jobs/{job['id']}", headers=HDR)
+    assert resp.status_code == 200, resp.text
+    out = resp.json()
+    assert (out["status"], out["project_id"], out["project_url"]) == ("deleted", pid, None)
+    deleted = out["report"]["deleted"]
+    assert deleted["label_studio_project"] == "deleted"
+    assert deleted["annotations_deleted"] == 0
+    assert deleted["files_removed"] == len(SAMPLE_FILES) + 1  # videos + tasks.json
+    assert deleted["bytes_freed"] > sum(len(c) for c in SAMPLE_FILES.values())
+    assert "dry_run" in out["report"]  # the earlier report is kept
+    assert pid not in fake_ls.projects and pid not in fake_ls.storages
+    assert not media_dir.exists()
+    assert app_settings.jobs_media_root.is_dir()  # only the job's own folder is removed
+    assert (app_settings.jobs_state_root / job["id"] / "input.csv").is_file()  # record kept
+
+    assert client.get(f"/api/v1/jobs/{job['id']}/results", headers=HDR).status_code == 410
+    assert client.get(f"/api/v1/jobs/{job['id']}/progress", headers=HDR).status_code == 410
+    assert client.post(f"/api/v1/jobs/{job['id']}/retry", headers=HDR).status_code == 409
+    again = client.delete(f"/api/v1/jobs/{job['id']}", headers=HDR)  # idempotent
+    assert again.status_code == 200
+    assert again.json()["report"]["deleted"]["label_studio_project"] == "already deleted"
+
+
+def test_delete_annotated_project_needs_force(
+    client: TestClient, sample_csv: bytes, fake_ls: FakeLabelStudio, app_settings: Settings
+) -> None:
+    job = _submit(client, sample_csv)
+    pid = job["project_id"]
+    fake_ls.tasks[pid][0]["annotations"] = [{"id": 1, "result": []}]
+
+    resp = client.delete(f"/api/v1/projects/{pid}", headers=HDR)
+    assert resp.status_code == 409
+    assert "1 annotation(s)" in resp.json()["detail"]
+    assert pid in fake_ls.projects and (app_settings.jobs_media_root / job["id"]).is_dir()
+    assert client.get(f"/api/v1/jobs/{job['id']}", headers=HDR).json()["status"] == "ready"
+
+    resp = client.delete(f"/api/v1/projects/{pid}?force=true", headers=HDR)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["id"] == job["id"]
+    assert resp.json()["report"]["deleted"]["annotations_deleted"] == 1
+    assert pid not in fake_ls.projects
+
+
+def test_delete_refuses_foreign_projects_and_running_jobs(
+    client: TestClient, sample_csv: bytes, fake_ls: FakeLabelStudio
+) -> None:
+    foreign = fake_ls.create_project("made in the LS UI", "<View/>")["id"]
+    resp = client.delete(f"/api/v1/projects/{foreign}?force=true", headers=HDR)
+    assert resp.status_code == 404 and "Label Studio" in resp.json()["detail"]
+    assert foreign in fake_ls.projects  # never touched
+    assert client.delete("/api/v1/jobs/20261112T120000Z-abcdef", headers=HDR).status_code == 404
+
+    job = _submit(client, sample_csv, dry_run=True)
+    client.app_state.store.update(job["id"], status="downloading")  # type: ignore[attr-defined]
+    resp = client.delete(f"/api/v1/jobs/{job['id']}", headers=HDR)
+    assert resp.status_code == 409 and "downloading" in resp.json()["detail"]
+    no_key = {"X-Forwarded-Proto": "https"}
+    assert client.delete(f"/api/v1/jobs/{job['id']}", headers=no_key).status_code == 401
+
+
+def test_delete_cancels_a_queued_job(
+    app_settings: Settings, fake_ls: FakeLabelStudio, sample_csv: bytes
+) -> None:
+    app = create_app(app_settings, ls_factory=lambda s: fake_ls, start_worker=False)  # type: ignore[arg-type,return-value]
+    with TestClient(app) as c:
+        files = {"file": ("q.csv", sample_csv, "text/csv")}
+        job_id = c.post("/api/v1/jobs", headers=HDR, files=files).json()["id"]
+        assert c.delete(f"/api/v1/jobs/{job_id}", headers=HDR).json()["status"] == "deleted"
+        app.state.pipeline.process(job_id)  # the worker reaches it later: skipped
+        job = c.get(f"/api/v1/jobs/{job_id}", headers=HDR).json()
+    assert job["status"] == "deleted" and job["report"]["deleted"]["project_id"] is None
+    assert fake_ls.projects == {}
+    assert not (app_settings.jobs_media_root / job_id).exists()
+
+
+def test_delete_label_studio_failure_changes_nothing(
+    client: TestClient,
+    sample_csv: bytes,
+    fake_ls: FakeLabelStudio,
+    app_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = _submit(client, sample_csv)
+
+    def broken(project_id: int) -> None:
+        raise LabelStudioError("DELETE -> 500", 500)
+
+    monkeypatch.setattr(fake_ls, "delete_project", broken)
+    resp = client.delete(f"/api/v1/jobs/{job['id']}", headers=HDR)
+    assert resp.status_code == 502
+    assert client.get(f"/api/v1/jobs/{job['id']}", headers=HDR).json()["status"] == "ready"
+    assert (app_settings.jobs_media_root / job["id"]).is_dir()  # videos kept

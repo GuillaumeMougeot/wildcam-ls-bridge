@@ -201,6 +201,11 @@ class FakeLabelStudio:
         self.projects[project_id].update(fields)
         return self.projects[project_id]
 
+    def delete_project(self, project_id: int) -> None:
+        self.get_project(project_id)  # 404 if unknown
+        del self.projects[project_id], self.tasks[project_id]
+        self.storages.pop(project_id, None)
+
     def list_local_storages(self, project_id: int) -> list[dict[str, Any]]:
         return self.storages.get(project_id, [])
 

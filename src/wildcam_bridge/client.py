@@ -5,6 +5,7 @@
         job = c.submit("query.csv", title="Hoestemark Dec 2024")
         job = c.wait(job["id"])                  # until ready / failed
         rows = c.results(job["id"])["rows"]      # when annotators are done
+        c.delete(job["id"])                      # project + videos, once results are stored
 
 Only HTTPS URLs are accepted (except localhost, for tests).
 """
@@ -18,7 +19,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-TERMINAL = {"ready", "dry_run_ok", "failed"}
+TERMINAL = {"ready", "dry_run_ok", "failed", "deleted"}
 
 
 class BridgeClient:
@@ -107,6 +108,19 @@ class BridgeClient:
             format="json",
             include_unannotated=str(include_unannotated).lower(),
         ).json()
+        return result
+
+    def delete(self, job_id: str, *, force: bool = False) -> dict[str, Any]:
+        """Delete the job's Label Studio project and videos (``force``: even if annotated)."""
+        return self._delete(f"/api/v1/jobs/{job_id}", force)
+
+    def delete_project(self, project_id: int, *, force: bool = False) -> dict[str, Any]:
+        return self._delete(f"/api/v1/projects/{project_id}", force)
+
+    def _delete(self, path: str, force: bool) -> dict[str, Any]:
+        resp = self._http.delete(path, params={"force": str(force).lower()})
+        resp.raise_for_status()
+        result: dict[str, Any] = resp.json()
         return result
 
     def results_csv(self, job_id: str, *, include_unannotated: bool = False) -> str:

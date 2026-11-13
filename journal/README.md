@@ -13,3 +13,4 @@ One file per task: `YYYY-MM-DD_NN_short-title.md`. Add a row when you add an ent
 | 07 | [Production pipeline test](2026-11-12_07_production-pipeline-test.md) | 2026-11-12 | `test_query.csv` → real ERDA → production LS (project 4): 94/94 videos in 76 s, results via API ✅ |
 | 08 | [Deployment check and pre-fill](2026-11-12_08_deployment-check-and-prefill.md) | 2026-11-12 | Installed service verified over public HTTPS (TLS 1.3, auth, rate limit, sandbox); model prediction pre-fill verified in LS 1.23 and hardened |
 | 09 | [Pre-fill test, full CSV](2026-11-12_09_prefill-test-full-csv.md) | 2026-11-12 | Full `test_query.csv` via public API (project 6): 94/94 videos pre-filled exactly as the CSV; new `scripts/verify_prefill.py` |
+| 10 | [Project deletion](2026-11-13_10_project-deletion.md) | 2026-11-13 | `DELETE /jobs/{id}` and `/projects/{id}` (bridge projects only, `force` for annotated ones); test projects 4–6 deleted, 2.7 GB freed |

@@ -30,7 +30,7 @@ from fastapi.testclient import TestClient
 from tests.conftest import SAMPLE_FILES, FakeErda, make_settings
 from wildcam_bridge.api import create_app
 from wildcam_bridge.auth import generate_api_key, hash_api_key
-from wildcam_bridge.labelstudio import LabelStudioClient
+from wildcam_bridge.labelstudio import LabelStudioClient, LabelStudioError
 
 pytestmark = pytest.mark.e2e
 
@@ -276,3 +276,17 @@ def test_full_round_trip(
             ).status_code
             == 403
         )
+
+        # ---------------------------------------------------------------- deletion
+        refused = client.delete(f"/api/v1/projects/{pid}", headers=HDR)
+        assert refused.status_code == 409, refused.text  # 4 annotations: needs force
+        deleted = client.delete(f"/api/v1/jobs/{job_id}?force=true", headers=HDR)
+        assert deleted.status_code == 200, deleted.text
+        summary = deleted.json()["report"]["deleted"]
+        assert (summary["label_studio_project"], summary["annotations_deleted"]) == ("deleted", 4)
+        with LabelStudioClient(live_ls.url, live_ls.legacy_token) as ls:
+            with pytest.raises(LabelStudioError) as gone:
+                ls.get_project(pid)
+            assert gone.value.status_code == 404
+        assert not (settings.jobs_media_root / job_id).exists()
+        assert client.get(f"/api/v1/jobs/{job_id}/results", headers=HDR).status_code == 410

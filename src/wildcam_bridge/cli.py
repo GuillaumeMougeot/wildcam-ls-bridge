@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -164,6 +165,39 @@ def cmd_check(_: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_delete(args: argparse.Namespace) -> int:
+    """Delete a job's Label Studio project + videos on this server (no API key needed)."""
+    from wildcam_bridge.jobs import JobStore
+    from wildcam_bridge.pipeline import DeleteRefused, Pipeline
+    from wildcam_bridge.settings import get_settings
+
+    s = get_settings()
+    store = JobStore(s.db_path)
+    job_id = _delete_target(args, store.find_by_project)
+    if job_id is None:
+        print(f"no bridge job created project {args.project}", file=sys.stderr)
+        return 1
+    try:
+        summary = Pipeline(s, store).delete(job_id, force=args.force)
+    except KeyError:
+        print(f"unknown job {job_id}", file=sys.stderr)
+        return 1
+    except DeleteRefused as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 1
+    _print({"job_id": job_id, **summary})
+    return 0
+
+
+def _delete_target(args: argparse.Namespace, find_by_project: Callable[[int], Any]) -> str | None:
+    if (args.job_id is None) == (args.project is None):
+        raise SystemExit("give either a JOB_ID or --project PROJECT_ID")
+    if args.job_id is not None:
+        return str(args.job_id)
+    job = find_by_project(args.project)
+    return None if job is None else str(job.id)
+
+
 # ---------------------------------------------------------------------- client commands
 def _client() -> Any:
     from wildcam_bridge.client import BridgeClient
@@ -215,6 +249,28 @@ def cmd_client_results(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_client_delete(args: argparse.Namespace) -> int:
+    import httpx
+
+    if (args.job_id is None) == (args.project is None):
+        raise SystemExit("give either a JOB_ID or --project PROJECT_ID")
+    with _client() as c:
+        try:
+            if args.project is not None:
+                job = c.delete_project(args.project, force=args.force)
+            else:
+                job = c.delete(args.job_id, force=args.force)
+        except httpx.HTTPStatusError as exc:  # 404 unknown, 409 refused: show the reason
+            try:
+                detail = exc.response.json().get("detail", exc.response.text)
+            except ValueError:
+                detail = exc.response.text
+            print(f"error {exc.response.status_code}: {detail}", file=sys.stderr)
+            return 1
+    _print(job)
+    return 0
+
+
 # ---------------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="wildcam-bridge", description=__doc__)
@@ -247,6 +303,17 @@ def build_parser() -> argparse.ArgumentParser:
     job_opts(s)
     s.set_defaults(func=cmd_run)
 
+    def delete_opts(sp: argparse.ArgumentParser) -> None:
+        sp.add_argument("job_id", nargs="?", help="job id (or use --project)")
+        sp.add_argument("--project", type=int, help="Label Studio project id")
+        sp.add_argument("--force", action="store_true", help="also if the project has annotations")
+
+    s = sub.add_parser(
+        "delete", help="delete a job's Label Studio project and videos on this server"
+    )
+    delete_opts(s)
+    s.set_defaults(func=cmd_delete)
+
     client = sub.add_parser(
         "client", help="call a remote bridge (needs BRIDGE_URL, BRIDGE_API_KEY)"
     )
@@ -264,6 +331,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--include-unannotated", action="store_true")
     s.add_argument("-o", "--output")
     s.set_defaults(func=cmd_client_results)
+    s = csub.add_parser("delete", help="delete a job's Label Studio project and videos")
+    delete_opts(s)
+    s.set_defaults(func=cmd_client_delete)
     return p
 
 

@@ -33,6 +33,6 @@ form) is covered by the automated tests (`NULL` row in the fixture, CSV without 
 Side effect: the `next` call locks task 6014 of project 6 for the service account for a
 while (test project, no impact).
 
-## Test leftovers to delete when done (owner)
+## Test leftovers to delete when done (owner): ✅ deleted 2026-11-13 (entry 10)
 LS projects **4, 5, 6** and the folders `~/labelstudio-data/bridge/20261112T140452Z-3a357f`,
 `…/20261112T142121Z-cb212c` and `…/20261112T143030Z-1b356f` (about 2.7 GB in total).

@@ -4,6 +4,7 @@ CSV  ->  parse/validate  ->  DRY RUN (ERDA login, stat files, free disk space)
      ->  download (SFTP)  ->  Label Studio project (+ local storage + tasks)  ->  READY
                                     ...human annotation...
 GET results  <-  Label Studio export (flattened)
+DELETE job   ->  Label Studio project deleted + job folder removed (job record kept)
 """
 
 from __future__ import annotations
@@ -12,13 +13,15 @@ import asyncio
 import json
 import logging
 import os
+import shutil
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from wildcam_bridge import erda
 from wildcam_bridge.csv_ingest import parse_csv
-from wildcam_bridge.jobs import Job, JobStatus, JobStore
+from wildcam_bridge.jobs import Job, JobStatus, JobStore, utcnow
 from wildcam_bridge.label_config import LabelConfig, load_label_config, parse_label_config
 from wildcam_bridge.labelstudio import LabelStudioClient, LabelStudioError
 from wildcam_bridge.paths import job_media_dir, validate_job_id
@@ -41,6 +44,10 @@ class JobFailed(RuntimeError):
     pass
 
 
+class DeleteRefused(RuntimeError):
+    """Deletion refused: job still running, or project has annotations and force=False."""
+
+
 class Pipeline:
     def __init__(
         self,
@@ -52,6 +59,8 @@ class Pipeline:
         self.store = store
         self.ls_factory = ls_factory or default_ls_factory
         self._label_config: LabelConfig | None = None
+        # Serialises job state transitions (worker start, retry, delete) inside one process.
+        self.state_lock = threading.Lock()
 
     @property
     def label_config(self) -> LabelConfig:
@@ -74,10 +83,15 @@ class Pipeline:
     # ------------------------------------------------------------------ processing
     def process(self, job_id: str) -> None:
         """Run one job to completion. Never raises: failures are stored on the job."""
-        job = self.store.get(job_id)
-        if job is None:
-            log.error("job %s vanished", job_id)
-            return
+        with self.state_lock:  # a queued job may have been deleted (cancelled) meanwhile
+            job = self.store.get(job_id)
+            if job is None:
+                log.error("job %s vanished", job_id)
+                return
+            if job.status != JobStatus.QUEUED:
+                log.warning("job %s is %s, not queued: skipped", job_id, job.status)
+                return
+            self.store.update(job_id, status=JobStatus.CHECKING, progress={"stage": "dry_run"})
         try:
             self._run(job)
         except Exception as exc:
@@ -193,6 +207,63 @@ class Pipeline:
             warnings=warnings,
             progress={"stage": "annotation", "tasks": len(tasks)},
         )
+
+    # ------------------------------------------------------------------ deletion
+    def delete(self, job_id: str, *, force: bool = False) -> dict[str, Any]:
+        """Delete a job's Label Studio project and its downloaded videos.
+
+        The job record (and its input CSV) is kept with status ``deleted``, so the deletion
+        stays traceable. Idempotent: repeating it finishes a partial deletion. Refused for
+        running jobs, and for projects with annotations unless ``force`` (annotations are
+        the valuable output: download the results first). A queued job is simply cancelled.
+        """
+        with self.state_lock:
+            job = self.store.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            if job.status in JobStatus.RUNNING:
+                raise DeleteRefused(f"job is {job.status}; delete it once it is ready or failed")
+            summary: dict[str, Any] = {
+                "at": utcnow(),
+                "project_id": job.project_id,
+                "label_studio_project": None,
+                "annotations_deleted": 0,
+                "files_removed": 0,
+                "bytes_freed": 0,
+            }
+            if job.project_id is not None:
+                summary.update(self._delete_ls_project(job.project_id, force=force))
+            media_dir = job_media_dir(self.settings, job.id)
+            if media_dir.is_dir() and not media_dir.is_symlink():
+                files = [f for f in media_dir.rglob("*") if f.is_file() and not f.is_symlink()]
+                summary["files_removed"] = len(files)
+                summary["bytes_freed"] = sum(f.stat().st_size for f in files)
+                shutil.rmtree(media_dir)
+            self.store.update(
+                job.id,
+                status=JobStatus.DELETED,
+                progress={"stage": "deleted"},
+                report={**job.report, "deleted": summary},
+            )
+            log.info("job %s deleted: %s", job.id, summary)
+            return summary
+
+    def _delete_ls_project(self, project_id: int, *, force: bool) -> dict[str, Any]:
+        with self.ls_factory(self.settings) as ls:
+            try:
+                project = ls.get_project(project_id)
+            except LabelStudioError as exc:
+                if exc.status_code == 404:  # deleted earlier (in the UI or a previous call)
+                    return {"label_studio_project": "already deleted"}
+                raise
+            n = int(project.get("total_annotations_number") or 0)
+            if n and not force:
+                raise DeleteRefused(
+                    f"project {project_id} has {n} annotation(s); download the results first, "
+                    "then repeat with force=true"
+                )
+            ls.delete_project(project_id)  # synchronous; LS cascades tasks and storages
+        return {"label_studio_project": "deleted", "annotations_deleted": n}
 
     # ------------------------------------------------------------------ results
     def results(

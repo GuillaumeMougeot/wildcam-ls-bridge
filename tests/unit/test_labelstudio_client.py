@@ -112,6 +112,8 @@ def test_request_payloads() -> None:
         c.export_tasks(4)
         c.list_local_storages(4)
         progress = c.project_progress(4)
+        c.delete_project(4)
+    assert seen[-1][:2] == ("DELETE", "/api/projects/4")
     assert seen[0][3]["title"] == "x" * 50  # LS limits titles to 50 chars
     assert seen[1][3]["regex_filter"] == NEVER_MATCH_REGEX
     assert seen[1][3]["use_blob_urls"] is False

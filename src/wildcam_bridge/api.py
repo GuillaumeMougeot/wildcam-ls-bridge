@@ -21,7 +21,7 @@ from wildcam_bridge.auth import verify_api_key
 from wildcam_bridge.csv_ingest import CsvValidationError, parse_csv
 from wildcam_bridge.jobs import Job, JobRunner, JobStatus, JobStore, new_job_id
 from wildcam_bridge.labelstudio import LabelStudioError
-from wildcam_bridge.pipeline import LSClientFactory, Pipeline
+from wildcam_bridge.pipeline import DeleteRefused, LSClientFactory, Pipeline
 from wildcam_bridge.results import rows_to_csv
 from wildcam_bridge.settings import Settings, get_settings
 
@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=False)
 # Module level on purpose: with postponed annotations FastAPI resolves names in module globals.
 Fmt = Annotated[Literal["json", "csv"], Query(alias="format", description="json or csv")]
+Force = Annotated[bool, Query(description="also delete a project that already has annotations")]
 
 
 def _route_path(request: Request) -> str:
@@ -170,15 +171,44 @@ def create_app(
     @app.post("/api/v1/jobs/{job_id}/retry", status_code=202, dependencies=auth, tags=["jobs"])
     def retry_job(job_id: str) -> dict[str, Any]:
         """Re-run a failed job. Files already downloaded (same size) are not fetched again."""
-        job = get_job_or_404(job_id)
-        if job.status != JobStatus.FAILED:
-            raise HTTPException(status_code=409, detail=f"job is {job.status}, not failed")
-        store.update(job_id, status=JobStatus.QUEUED, error=None)
+        with pipeline.state_lock:  # not concurrently with a DELETE of the same job
+            job = get_job_or_404(job_id)
+            if job.status != JobStatus.FAILED:
+                raise HTTPException(status_code=409, detail=f"job is {job.status}, not failed")
+            store.update(job_id, status=JobStatus.QUEUED, error=None)
         runner.submit(job_id)
         return public(get_job_or_404(job_id))
 
+    def delete_response(job_id: str, force: bool) -> dict[str, Any]:
+        try:
+            ls_call(lambda: pipeline.delete(job_id, force=force))
+        except DeleteRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return public(get_job_or_404(job_id))
+
+    @app.delete("/api/v1/jobs/{job_id}", dependencies=auth, tags=["jobs"])
+    def delete_job(job_id: str, force: Force = False) -> dict[str, Any]:
+        """Delete the job's Label Studio project and downloaded videos (the job record stays,
+        with status ``deleted``). A queued job is cancelled; a running one is refused (409)."""
+        get_job_or_404(job_id)
+        return delete_response(job_id, force)
+
+    @app.delete("/api/v1/projects/{project_id}", dependencies=auth, tags=["jobs"])
+    def delete_project(project_id: int, force: Force = False) -> dict[str, Any]:
+        """Same as ``DELETE /jobs/{id}``, by Label Studio project id. Only projects created by
+        the bridge can be deleted here; others are left alone (404)."""
+        job = store.find_by_project(project_id)
+        if job is None:
+            raise HTTPException(
+                status_code=404,
+                detail="no bridge job created this project; delete it in Label Studio instead",
+            )
+        return delete_response(job.id, force)
+
     def ready_project(job_id: str) -> int:
         job = get_job_or_404(job_id)
+        if job.status == JobStatus.DELETED:
+            raise HTTPException(status_code=410, detail="job was deleted")
         if job.status != JobStatus.READY or job.project_id is None:
             raise HTTPException(status_code=409, detail=f"job is {job.status}, not ready")
         return job.project_id

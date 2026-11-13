@@ -104,13 +104,14 @@ curl -sS "$BRIDGE_URL/api/v1/jobs/20261112T140501Z-3fa9c1" -H "Authorization: Be
 | `ready` | project exists: `project_url` links to it; annotation can start |
 | `dry_run_ok` | dry-run job passed: a real job would succeed |
 | `failed` | see `error`; fix the cause and `POST /api/v1/jobs/{id}/retry` (already downloaded files are kept) |
+| `deleted` | the Label Studio project and the videos were deleted (see section 7); `report.deleted` says when and what |
 
 Useful fields: `report.dry_run` (files found, missing sample, bytes to download, free
 space), `report.download`, `warnings` (e.g. a model label that is not a choice in the UI),
 `project_id`, `project_url`.
 
-Other job endpoints: `GET /api/v1/jobs?limit=50` (latest jobs) and
-`POST /api/v1/jobs/{id}/retry` (failed jobs only).
+Other job endpoints: `GET /api/v1/jobs?limit=50` (latest jobs),
+`POST /api/v1/jobs/{id}/retry` (failed jobs only) and `DELETE /api/v1/jobs/{id}` (section 7).
 
 ## 5. Annotation progress
 
@@ -154,7 +155,46 @@ Results can be fetched at any time (partial results while annotation is ongoing)
 Projects not created by the bridge (e.g. the original "wildcam" project) are available
 through `GET /api/v1/projects/{project_id}/results` and `/progress`.
 
-## 7. Python client and command line
+## 7. Delete a project
+
+When the results are safely in the database, delete the project to free the server's disk
+(each project keeps its videos, about 15 MB per video):
+
+```bash
+# by job id
+curl -sS -X DELETE "$BRIDGE_URL/api/v1/jobs/$JOB" -H "Authorization: Bearer $BRIDGE_API_KEY"
+# or by Label Studio project id
+curl -sS -X DELETE "$BRIDGE_URL/api/v1/projects/12" -H "Authorization: Bearer $BRIDGE_API_KEY"
+```
+
+This deletes the Label Studio project (tasks, **annotations**, predictions) and the job's
+downloaded videos. **It cannot be undone.** The job record stays, with status `deleted`
+and a summary:
+
+```json
+{"id": "20261112T140501Z-3fa9c1", "status": "deleted", "project_id": 12, "project_url": null,
+ "report": {"dry_run": {...}, "download": {...},
+            "deleted": {"at": "2026-11-13T08:51:04+00:00", "project_id": 12,
+                        "label_studio_project": "deleted", "annotations_deleted": 41,
+                        "files_removed": 95, "bytes_freed": 1364388952}}}
+```
+
+Safety rules:
+
+* **Projects with annotations are protected.** The call answers `409` ("project 12 has 41
+  annotation(s); download the results first, then repeat with force=true"). Download the
+  results (section 6), then repeat with `?force=true`.
+* **Only projects created by the bridge** can be deleted. Any other Label Studio project
+  (e.g. the original "wildcam" project) answers `404` and is not touched: delete those in
+  the Label Studio UI.
+* A job that is `checking`, `downloading` or `importing` cannot be deleted (`409`); wait
+  until it is `ready` or `failed`. A `queued` job is simply cancelled.
+* Repeating the call is harmless (`label_studio_project: "already deleted"`), also when
+  the project was already deleted in the Label Studio UI: the videos are then still
+  removed.
+* After deletion, results and progress for the job answer `410 Gone`.
+
+## 8. Python client and command line
 
 The repository includes a small client (`pip install` the repo, or copy
 `src/wildcam_bridge/client.py`, which only needs `httpx`):
@@ -165,10 +205,12 @@ from wildcam_bridge.client import BridgeClient
 
 with BridgeClient(os.environ["BRIDGE_URL"], os.environ["BRIDGE_API_KEY"]) as bridge:
     job = bridge.submit("query.csv", title="Hoestemark batch 1")
-    job = bridge.wait(job["id"])                 # polls until ready / failed
+    job = bridge.wait(job["id"])  # polls until ready / failed
     print(job["status"], job["project_url"])
     # ... later, when bridge.progress(job["id"])["complete"] is True:
     rows = bridge.results(job["id"])["rows"]
+    # ... once the rows are stored in the database:
+    bridge.delete(job["id"], force=True)  # or bridge.delete_project(project_id)
 ```
 
 Command line equivalents (they use `BRIDGE_URL` and `BRIDGE_API_KEY`):
@@ -178,17 +220,20 @@ wildcam-bridge client submit query.csv --title "Hoestemark batch 1" --wait
 wildcam-bridge client submit query.csv --dry-run --wait        # only check
 wildcam-bridge client status 20261112T140501Z-3fa9c1            # status + annotation progress
 wildcam-bridge client results 20261112T140501Z-3fa9c1 --format csv -o results.csv
+wildcam-bridge client delete 20261112T140501Z-3fa9c1            # add --force if annotated
+wildcam-bridge client delete --project 12 --force
 ```
 
-## 8. Errors
+## 9. Errors
 
 | HTTP | When |
 |---|---|
 | 400 | invalid CSV (message says which line/column) |
 | 401 | missing or invalid API key |
 | 403 | request did not come over HTTPS |
-| 404 | unknown job or Label Studio project |
-| 409 | results/progress requested for a job that is not `ready`, or retry of a job that did not fail |
+| 404 | unknown job or Label Studio project; `DELETE` of a project the bridge did not create |
+| 409 | results/progress requested for a job that is not `ready`; retry of a job that did not fail; `DELETE` of a running job, or of an annotated project without `force=true` |
+| 410 | results/progress of a deleted job |
 | 413 | CSV larger than 20 MB |
 | 429 | rate limit exceeded |
 | 502 | Label Studio unreachable or rejected the request |

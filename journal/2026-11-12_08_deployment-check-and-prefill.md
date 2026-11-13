@@ -50,6 +50,6 @@ already has this value by default.
 One client key exists (`secrets/api-key-sql-client.txt`, hash in `.env`). No other key is
 needed for testing.
 
-## Test leftovers to delete when done (owner)
+## Test leftovers to delete when done (owner): ✅ deleted 2026-11-13 (entry 10)
 LS projects **4** and **5**, and
 `~/labelstudio-data/bridge/20261112T140452Z-3a357f`, `…/20261112T142121Z-cb212c`.

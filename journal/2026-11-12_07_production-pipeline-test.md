@@ -38,5 +38,5 @@ Under the real uvicorn server (`--root-path /bridge`), `/healthz` was refused wi
 commit b11cd5f; the regression test drives the app the way uvicorn does.
 
 ## To do (owner)
-* Inspect, then **delete LS project 4** and `rm -r ~/labelstudio-data/bridge/20261112T140452Z-3a357f`.
+* ~~Inspect, then **delete LS project 4** and `rm -r ~/labelstudio-data/bridge/20261112T140452Z-3a357f`~~: done 2026-11-13 (entry 10).
 * ~~`sudo deploy/install.sh`~~: done by the owner at 14:14 UTC (see entry 08).
